@@ -1,0 +1,10 @@
+{
+    "env": "3",
+    "dataset_scale": 1,
+    "Lambda": 100,
+    "num_epoch": 500,
+    "batch_size": 256,
+    "snr": 20,
+    "fig_name": "Valentini/WUN_opt_prefilter",
+    "model_target_path": "/home/alexlin/Desktop/SPE_BWE/trained_model/Valentini/BWE_only"
+}
