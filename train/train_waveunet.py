@@ -15,9 +15,9 @@ parser = argparse.ArgumentParser()
 parser.add_argument('--env', type=str, default='0', help='GPU number')
 parser.add_argument('--epoch', type=int, default=200, help='epoch number')
 parser.add_argument('--batch', type=int, default=256, help='batch size')
+parser.add_argument('--lr', type=float, default=0.0005, help='learning rate')
 parser.add_argument('--model_path', type=str, default='trained_model/BWE_only', help='model save path')
 parser.add_argument('--Lambda', type=float, default=200, help='weighted parameter between wav loss and MSTFT loss')
-parser.add_argument('--conf', action='append')
 args = parser.parse_args()
 
 
@@ -37,7 +37,7 @@ print('Decoder #params: %d' %decoder_total_params)
 
 #======Training setting======#
 loss = MSTFTLoss().to(device)
-optimizer = optim.Adam(list(Encoder.parameters()) + list(Decoder.parameters()), lr = 0.0005)
+optimizer = optim.Adam(list(Encoder.parameters()) + list(Decoder.parameters()), lr = args.lr)
 n_epoch = args.epoch
 n_batch = args.batch
 
@@ -164,7 +164,7 @@ for epoch in range(n_epoch):
     plt.title('Loss vs Epochs')
     plt.xlabel('loss')
     plt.ylabel('epoch')
-    plt.savefig("fig/loss.png", dpi=300, format = 'png')
+    plt.savefig("fig/WUN.png", dpi=300, format = 'png')
 
     
     plt.figure()
@@ -176,6 +176,6 @@ for epoch in range(n_epoch):
     plt.title('Loss vs Epochs')
     plt.xlabel('loss')
     plt.ylabel('epoch')
-    plt.savefig("fig/loss_MSTFT.png", dpi=300, format = 'png')
+    plt.savefig("fig/WUN_MSTFT.png", dpi=300, format = 'png')
 
 

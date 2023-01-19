@@ -35,9 +35,9 @@ class UpSamplingLayer(nn.Module):
     def forward(self, ipt):
         return self.main(ipt)
 
-class NoiseEncoder(nn.Module):
+class SQC(nn.Module):
     def __init__(self):
-        super(NoiseEncoder, self).__init__()
+        super(SQC, self).__init__()
 
         self.main = nn.Sequential(
             nn.MaxPool1d(3, stride=2),
@@ -70,7 +70,7 @@ class NoiseEncoder(nn.Module):
         cnn = cnn.permute(0,2,1)
         output = self.linear(cnn)
         output = self.softmax(output)
-        return cnn, lstm, output
+        return lstm, output
 
 class BidirectionalLSTM(nn.Module):
     'fd'
@@ -221,7 +221,7 @@ class MSTFTLoss(nn.Module):
         l_wav = Lambda*loss(y_pred, y)
         y = y.squeeze()
         y_pred = y_pred.squeeze()
-        
+
         l = l_wav+l_512+l_1024+l_2048
 
         return l, l_wav, l_512, l_1024, l_2048
