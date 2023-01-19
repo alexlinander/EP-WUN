@@ -1,5 +1,5 @@
-import sys
 import os
+import sys
 import torch
 import torch.nn as nn
 import torch.optim as optim
@@ -13,7 +13,7 @@ from tqdm import tqdm
 import numpy as np
 import librosa
 sys.path.append("./..")
-from model.waveunet import waveunet, NoiseEncoder, MSTFTLoss, negative_set_define
+from model.waveunet_v2 import DownsamplingBlock, UpsamplingBlock, NoiseEncoder, MSTFTLoss
 from dataset import BWENoiseDataset
 from utils_nn import mu_law_decode, mu_law_encode
 from metric import myPESQ
@@ -37,16 +37,18 @@ os.environ["CUDA_VISIBLE_DEVICES"] = args.env
 device = torch.device("cuda:0" if torch.cuda.is_available() else "cpu")
 
 #======Read model======#
-Model_w1 = waveunet()
-Model_w1.load_state_dict(torch.load(args.waveunet_path))
-Model_w1 = Model_w1.to(device)
-Model_w2 = waveunet()
-Model_w2.load_state_dict(torch.load(args.waveunet_path))
-Model_w2 = Model_w2.to(device)
+Encoder = DownsamplingBlock()
+Encoder.load_state_dict(torch.load(args.Encoder_path))
+Encoder = Encoder.to(device)
+Encoder2 = DownsamplingBlock()
+Encoder2.load_state_dict(torch.load(args.Encoder_path))
+Encoder2 = Encoder2.to(device)
+Decoder = UpsamplingBlock()
+Decoder.load_state_dict(torch.load(args.Decoder_path))
+Decoder = Decoder.to(device)
 Model_n = NoiseEncoder()
 Model_n.load_state_dict(torch.load(args.noiseencoder_path))
 Model_n = Model_n.to(device)
-refine_negative = negative_set_define().to(device)
 
 #======Training setting======#
 loss = MSTFTLoss()
@@ -54,7 +56,7 @@ MAELoss = nn.L1Loss()
 MSELoss = nn.MSELoss()
 TRPloss = nn.TripletMarginLoss()
 Labelloss = nn.CrossEntropyLoss()
-optimizer = optim.Adam(Model_w2.parameters(), lr = 0.0002)
+optimizer = optim.Adam(list(Encoder.parameters()) + list(Decoder.parameters()), lr = 0.0002)
 lambda_ = args.Lambda_wav
 lambda_TRP = args.Lambda_triplet
 n_epoch = args.num_epoch
@@ -85,7 +87,7 @@ noisydataset = BWENoiseDataset(type='valid', language='ENG',noise='noisy', snr=a
 noisyloader = DataLoader(dataset=noisydataset, batch_size=n_batch, shuffle=True)
 print('noisy validset size: %d' %noisydataset.__len__())
 print('noisy validset done!')
-os.chdir('./contrastive_WUN_opt')
+os.chdir('./contrastive_WUN_v2')
 
 
 #======Load clean/noisy wavefile======#
@@ -114,7 +116,7 @@ def get_positive_negative(index):
 
     return positive, negative
 
-def train(net_w1, net_w2, net_n, loss, optimizer, dataloader):
+def train(net_en1, net_en2, net_de, net_n, loss, optimizer, dataloader):
     running_loss = 0.0
     wav_loss = 0.0
     MSTFT_loss = 0.0
@@ -152,13 +154,21 @@ def train(net_w1, net_w2, net_n, loss, optimizer, dataloader):
         x_n = torch.Tensor(x_n).to(device)
 
         # Prediction = forward pass
-        hidden_p,_ = net_w1(x_p)
-        hidden_n,_ = net_w1(x_n)
-        h_p,_,_ = net_n(hidden_p)
-        h_n,_,_ = net_n(hidden_n)
+        hidden_p,_ = net_en2(x_p)
+        hidden_n,_ = net_en2(x_n)
+        _,h_p,_ = net_n(hidden_p)
+        _,h_n,_ = net_n(hidden_n)
 
-        hidden,y_pred = net_w2(x)
-        h,_,pred = net_n(hidden)
+        hidden,tmp = net_en1(x)
+        _,h,_ = net_n(hidden)
+
+        hh = h.permute(0,2,1)
+
+
+
+        hidden = hh+ hidden
+
+        y_pred = net_de(hidden, x, tmp)
         
         #Compute MAE loss/ MSTFT loss/ Triplet loss
         _, l_wav, l_512, l_1024, l_2048 = loss(y_pred, y, lambda_, device)
@@ -195,7 +205,7 @@ def train(net_w1, net_w2, net_n, loss, optimizer, dataloader):
 
     return total_loss/n, loss_wav/n, loss_TRP/n, loss_MSTFT/n
 
-def valid(net_w1, net_w2, net_n, loss, dataloader, type_):
+def valid(net_en1, net_en2, net_de, net_n, loss, dataloader, type_):
     pesq = 0.0
     running_pesq = 0.0
     
@@ -211,7 +221,13 @@ def valid(net_w1, net_w2, net_n, loss, dataloader, type_):
 
         # Prediction = forward pass
 
-        _,y_pred = net_w2(x)
+        hidden,tmp = net_en1(x)
+        _,hh,_ = net_n(hidden)
+
+        hh = hh.permute(0,2,1)
+        hidden = hh+hidden
+
+        y_pred = net_de(hidden, x, tmp)
         y_pred = y_pred.data.cpu().numpy()
         y = y.data.cpu().numpy()
         y_pred = mu_law_decode(y_pred)
@@ -241,32 +257,36 @@ average_loss = []
 PESQ_valid = 0.0
 for epoch in range(n_epoch):
 
-    Model_w1.train()
-    Model_w2.train()
+    Encoder.train()
+    Encoder2.train()
+    Decoder.train()
     Model_n.train()
-    total_loss, loss_wav, loss_TRP, loss_MSTFT = train(Model_w1, Model_w2, Model_n, loss, optimizer, trainloader)
+    total_loss, loss_wav, loss_TRP, loss_MSTFT = train(Encoder, Encoder2, Decoder, Model_n, loss, optimizer, trainloader)
     epoch_loss.append(total_loss)
     epoch_loss_wav.append(loss_wav)
     epoch_loss_TRP.append(loss_TRP)
     epoch_loss_MSTFT.append(loss_MSTFT)
 
-    Model_w1.eval()
-    Model_w2.eval()
+    Encoder.eval()
+    Encoder2.eval()
+    Decoder.eval()
     Model_n.eval()
     with torch.no_grad():
 
-        pesq1 = valid(Model_w1, Model_w2, Model_n, loss, cleanloader, 'Clean')
+        pesq1 = valid(Encoder, Encoder2, Decoder, Model_n, loss, cleanloader, 'Clean')
         clean_pesq.append(pesq1)
 
-        pesq2 = valid(Model_w1, Model_w2, Model_n, loss, noisyloader, 'Noisy')
+        pesq2 = valid(Encoder, Encoder2, Decoder, Model_n, loss, noisyloader, 'Noisy')
         noisy_pesq.append(pesq2)
 
         average_loss.append(pesq2)
         if pesq2> PESQ_valid and args.write_model:
             print("======Writing Model!======")
             PESQ_valid = pesq2
-            path = args.model_target_path +'adversarial_waveunet_opt_prefinal_PESQ.pt'
-            torch.save(Model_w2.state_dict(), path)
+            path_encoder = args.model_target_path +'/adversarial_WUN_Encoder_opt_final.pt'
+            path_decoder = args.model_target_path +'/adversarial_WUN_Decoder_opt_final.pt'
+            torch.save(Encoder.state_dict(), path_encoder)
+            torch.save(Decoder.state_dict(), path_decoder)
     
     plt.figure()
     plt.plot(epoch_loss,color = 'r',label = 'training loss')

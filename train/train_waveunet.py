@@ -5,70 +5,64 @@ import torch.nn as nn
 import torch.optim as optim
 from torch.utils.data import Dataset,DataLoader
 import matplotlib.pyplot as plt
-import torchaudio
-import json
 import argparse
-import librosa
-from tqdm import tqdm
 sys.path.append("./..")
-from model.waveunet import waveunet, MSTFTLoss
-from dataset import BWEDataset, BWENoiseDataset
-from utils_nn import mu_law_decode, mu_law_encode
-sys.path.append("./..")
+from model.waveunet_v2 import DownsamplingBlock, UpsamplingBlock,  MSTFTLoss
+from dataset import BWEDataset
 
 #======Configureation filte setting======#
 parser = argparse.ArgumentParser()
+parser.add_argument('--env', type=str, default='0', help='GPU number')
+parser.add_argument('--epoch', type=int, default=200, help='epoch number')
+parser.add_argument('--batch', type=int, default=256, help='batch size')
+parser.add_argument('--model_path', type=str, default='trained_model/BWE_only', help='model save path')
+parser.add_argument('--Lambda', type=float, default=200, help='weighted parameter between wav loss and MSTFT loss')
 parser.add_argument('--conf', action='append')
 args = parser.parse_args()
 
-if args.conf is not None:
-    for conf_fname in args.conf:
-        with open(conf_fname, 'r') as f:
-            parser.set_defaults(**json.load(f))
-
-    # Reload arguments to override config file values with command line values
-    args = parser.parse_args()
 
 #======Environment setting======#
 os.environ["CUDA_VISIBLE_DEVICES"] = args.env
 device = torch.device("cuda:0" if torch.cuda.is_available() else "cpu")
 
 #======Read model======#
-Model = waveunet().to(device)
+Encoder = DownsamplingBlock().to(device)
+Decoder = UpsamplingBlock().to(device)
 
 #======Show #parameters======#
-pytorch_total_params = sum(p.numel() for p in Model.parameters() if p.requires_grad)
-print(pytorch_total_params)
+encoder_total_params = sum(p.numel() for p in Encoder.parameters() if p.requires_grad)
+decoder_total_params = sum(p.numel() for p in Decoder.parameters() if p.requires_grad)
+print('Encoder #params: %d' %encoder_total_params)
+print('Decoder #params: %d' %decoder_total_params)
 
 #======Training setting======#
-loss = MSTFTLoss()
-MAELoss = nn.L1Loss()
-optimizer = optim.Adam(Model.parameters(), lr = 0.0002)
-scheduler = optim.lr_scheduler.ReduceLROnPlateau(optimizer, mode='min', factor=0.5, patience=5, min_lr=0.00001)
-lambda_ = args.Lambda
-n_epoch = args.num_epoch
-n_batch = args.batch_size
-scale = args.dataset_scale
+loss = MSTFTLoss().to(device)
+optimizer = optim.Adam(list(Encoder.parameters()) + list(Decoder.parameters()), lr = 0.0005)
+n_epoch = args.epoch
+n_batch = args.batch
 
-#======STFT setting======#
-transform= torchaudio.transforms.Spectrogram(n_fft=512, hop_length=128, win_length=256, power=None).to(device)
-transform_sinc = torchaudio.transforms.Resample(8000, 16000).to(device)
 os.chdir('./..')
-traindataset = BWEDataset(type='train', language='ENG', noise=None, snr=args.snr, scale=scale)
+traindataset = BWEDataset(type='train', noise=None)
 trainloader = DataLoader(dataset=traindataset, batch_size=n_batch, shuffle=True)
 print('trainset size: %d' %traindataset.__len__())
 print('trainset dome!')
-cleandataset = BWEDataset(type='valid', language='ENG', noise='clean', snr=args.snr, scale=scale)
+cleandataset = BWEDataset(type='valid', noise='clean')
 cleanloader = DataLoader(dataset=cleandataset, batch_size=n_batch, shuffle=True)
 print('clean validset size: %d' %cleandataset.__len__())
 print('clean validset done!')
-noisydataset = BWEDataset(type='valid', language='ENG', noise='noisy', snr=args.snr, scale=scale)
+noisydataset = BWEDataset(type='valid', noise='noisy')
 noisyloader = DataLoader(dataset=noisydataset, batch_size=n_batch, shuffle=True)
 print('noisy validset size: %d' %noisydataset.__len__())
 print('noisy validset done!')
-os.chdir('./contrastive_WUN_opt')
 
-def train(net, loss, optimizer, dataloader):
+if not os.path.exists(args.model_path):
+    os.makedirs(args.model_path)
+
+if not os.path.exists('fig'):
+    os.makedirs('fig')
+
+
+def train(net_en, net_de, loss, optimizer, dataloader):
     running_loss = 0.0
     total_loss = 0.0
     total_loss_ = 0.0
@@ -78,30 +72,17 @@ def train(net, loss, optimizer, dataloader):
     
     for i,(index,x,y) in enumerate(dataloader):
 
-        #zero gradients
         optimizer.zero_grad()
 
-        x = x.data.numpy()
-        x = librosa.effects.preemphasis(x)
-        # x = mu_law_encode(x)
-        # y = mu_law_encode(y)
         x = torch.Tensor(x).to(device)
         y = torch.Tensor(y).to(device)
 
+        hidden,tmp = net_en(x)
+        y_pred = net_de(hidden, x, tmp)
         
-        #x = x.unsqueeze(1)
-        #y = y.unsqueeze(1)
-
-        # Prediction = forward pass
-        _,y_pred = net(x)
-        
-        #Compute MSTFT loss
-        #l, l_wav, l_512, l_1024, l_2048 = loss(y_pred, y, lambda_, device)
-        l, l_wav, l_512, l_1024, l_2048 = loss(y_pred, y, lambda_, device)
-        # l = ASRloss(y_pred, y)
+        l, l_wav, l_512, l_1024, l_2048 = loss(y_pred, y, args.Lambda)
         l.backward()
 
-        # update weight
         optimizer.step()
 
         running_loss += float(l)
@@ -116,26 +97,19 @@ def train(net, loss, optimizer, dataloader):
             running_loss = 0.0
 
     return total_loss/n, total_loss_/n, total_loss_512/n, total_loss_1024/n, total_loss_2048/n
-def valid(net, loss, dataloader, type_):
+def valid(net_en, net_de, loss, dataloader, type_):
     running_loss = 0.0
     total_loss = 0.0
     
     for i,(index,x,y) in enumerate(dataloader):
 
-
-        x = x.data.numpy()
-        x = librosa.effects.preemphasis(x)
-        # x = mu_law_encode(x)
-        # y = mu_law_encode(y)
         x = torch.Tensor(x).to(device)
         y = torch.Tensor(y).to(device)
 
-
-        # Prediction = forward pass
-        _,y_pred = net(x)
+        hidden,tmp = net_en(x)
+        y_pred = net_de(hidden, x, tmp)
         
-        #Compute MSTFT loss
-        l,_,_,_,_= loss(y_pred, y, lambda_, device)
+        l,_,_,_,_= loss(y_pred, y, args.Lambda)
 
         running_loss += float(l)
         total_loss += float(l)
@@ -156,11 +130,10 @@ noisy_loss = []
 
 LOSS_valid = float("inf")
 for epoch in range(n_epoch):
-    my_lr = scheduler.optimizer.param_groups[0]['lr']
-    print("Learning rate: %f" %my_lr)
 
-    Model.train()
-    total_loss, total_loss_, total_loss_512, total_loss_1024, total_loss_2048 = train(Model, loss, optimizer, trainloader)
+    Encoder.train()
+    Decoder.train()
+    total_loss, total_loss_, total_loss_512, total_loss_1024, total_loss_2048 = train(Encoder, Decoder, loss, optimizer, trainloader)
     
     epoch_loss.append(total_loss)
     epoch_loss_.append(total_loss_)
@@ -168,18 +141,20 @@ for epoch in range(n_epoch):
     epoch_loss_1024.append(total_loss_1024)
     epoch_loss_2048.append(total_loss_2048)
 
-    Model.eval()
+    Encoder.eval()
+    Encoder.eval()
     with torch.no_grad():
-        total_loss1 = valid(Model, loss, cleanloader, 'Clean')
+        total_loss1 = valid(Encoder, Decoder, loss, cleanloader, 'Clean')
         clean_loss.append(total_loss1)
-        total_loss2 = valid(Model, loss, noisyloader, 'Noisy')
+        total_loss2 = valid(Encoder, Decoder, loss, noisyloader, 'Noisy')
         noisy_loss.append(total_loss2)
         total_loss = total_loss1+total_loss2
         if total_loss < LOSS_valid:
             LOSS_valid = total_loss
-            path = args.model_target_path +'/waveunet_opt_prefilter_v2.pt'
-            torch.save(Model.state_dict(), path)
-        # scheduler.step(total_loss)
+            path_encoder = args.model_path +'/WUN_Encoder.pt'
+            path_decoder = args.model_path +'/WUN_Decoder.pt'
+            torch.save(Encoder.state_dict(), path_encoder)
+            torch.save(Decoder.state_dict(), path_decoder)
     
     plt.figure()
     plt.plot(epoch_loss,color = 'r',label = 'training loss')
@@ -189,7 +164,7 @@ for epoch in range(n_epoch):
     plt.title('Loss vs Epochs')
     plt.xlabel('loss')
     plt.ylabel('epoch')
-    plt.savefig(args.fig_name +".png", dpi=300, format = 'png')
+    plt.savefig("fig/loss.png", dpi=300, format = 'png')
 
     
     plt.figure()
@@ -201,14 +176,6 @@ for epoch in range(n_epoch):
     plt.title('Loss vs Epochs')
     plt.xlabel('loss')
     plt.ylabel('epoch')
-    plt.savefig(args.fig_name +"_MSTFT.png", dpi=300, format = 'png')
+    plt.savefig("fig/loss_MSTFT.png", dpi=300, format = 'png')
 
-        
 
-    print(epoch_loss)
-    print(epoch_loss_)
-    print(epoch_loss_512)
-    print(epoch_loss_1024)
-    print(epoch_loss_2048)
-    print(clean_loss)
-    print(noisy_loss)

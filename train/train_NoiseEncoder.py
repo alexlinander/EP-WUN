@@ -11,7 +11,7 @@ import argparse
 from tqdm import tqdm
 import librosa
 sys.path.append("./..")
-from model.waveunet import waveunet, NoiseEncoder
+from model.waveunet_v2 import DownsamplingBlock, UpsamplingBlock, NoiseEncoder
 from dataset import NoiseEncoderDataset
 from utils_nn import mu_law_decode, mu_law_encode
 sys.path.append("./..")
@@ -34,9 +34,9 @@ os.environ["CUDA_VISIBLE_DEVICES"] = args.env
 device = torch.device("cuda:0" if torch.cuda.is_available() else "cpu")
 
 #======Read model======#
-Model1 = waveunet()
-Model1.load_state_dict(torch.load(args.waveunet_path))
-Model1 = Model1.to(device)
+Encoder = DownsamplingBlock().to(device)
+Encoder.load_state_dict(torch.load(args.Encoder_path))
+Encoder = Encoder.to(device)
 Model2 = NoiseEncoder().to(device)
 
 #======Training setting======#
@@ -60,7 +60,7 @@ noisydataset = NoiseEncoderDataset(type='valid', language='ENG',noise='noisy', s
 noisyloader = DataLoader(dataset=noisydataset, batch_size=n_batch, shuffle=True)
 print('noisy validset size: %d' %noisydataset.__len__())
 print('noisy validset done!')
-os.chdir('./contrastive_WUN_opt')
+os.chdir('./contrastive_WUN_v2')
 
 def train(net1, net2, loss, optimizer, dataloader):
     running_loss = 0.0
@@ -115,7 +115,6 @@ def valid(net1, net2, loss, dataloader, type_):
         # Prediction = forward pass
         hidden,_ = net1(x)
         _,_,y_pred = net2(hidden)
-        print(y_pred.size())
         y_pred = y_pred.squeeze(1)
         
         #Compute MSTFT loss
@@ -148,20 +147,20 @@ average_acc = []
 LOSS_valid = float("inf")
 for epoch in range(n_epoch):
 
-    Model1.eval()
+    Encoder.train()
     Model2.train()
-    total_loss = train(Model1, Model2, loss, optimizer, trainloader)
+    total_loss = train(Encoder, Model2, loss, optimizer, trainloader)
     
     epoch_loss.append(total_loss)
 
     Model2.eval()
     with torch.no_grad():
-        total_loss1, acc1 = valid(Model1, Model2, loss, cleanloader, 'Clean')
+        total_loss1, acc1 = valid(Encoder, Model2, loss, cleanloader, 'Clean')
         print('Epoch %d Clean Accuracy: %3f' % (epoch+1, acc1))
         clean_loss.append(total_loss1)
         clean_acc.append(acc1)
 
-        total_loss2, acc2 = valid(Model1, Model2, loss, noisyloader, 'Noisy')
+        total_loss2, acc2 = valid(Encoder, Model2, loss, noisyloader, 'Noisy')
         print('Epoch %d Noisy Accuracy: %3f' % (epoch+1, acc2))
         noisy_loss.append(total_loss2)
         noisy_acc.append(acc2)
@@ -172,7 +171,7 @@ for epoch in range(n_epoch):
         if total_loss < LOSS_valid and args.write_model:
             print("======Writing Model!======")
             LOSS_valid = total_loss
-            path = args.model_target_path +'/NoiseEcoder_opt_v2.pt'
+            path = args.model_target_path +'/NoiseEcoder_opt_final.pt'
             torch.save(Model2.state_dict(), path)
     
     plt.figure()

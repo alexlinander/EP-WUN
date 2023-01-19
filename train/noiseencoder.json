@@ -1,0 +1,13 @@
+{
+    "env": "3",
+    "dataset_scale": 1,
+    "learning_rate": 0.0002,
+    "num_epoch": 500,
+    "batch_size": 128,
+    "snr": 20,
+    "fig_name": "Valentini_final/NE_opt_final",
+    "write_model": 1,
+    "Encoder_path": "/home/alexlin/Desktop/SPE_BWE/trained_model/Valentini/BWE_only/WUN_Encoder_opt_final.pt",
+    "Decoder_path": "/home/alexlin/Desktop/SPE_BWE/trained_model/Valentini/BWE_only/WUN_Decoder_opt_final.pt",
+    "model_target_path": "/home/alexlin/Desktop/SPE_BWE/trained_model/Valentini/Contrastive_WUN_v2/NE"
+}
