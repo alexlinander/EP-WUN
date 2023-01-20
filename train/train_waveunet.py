@@ -1,9 +1,7 @@
 import sys
 import os
 import torch
-import torch.nn as nn
 import torch.optim as optim
-from torch.utils.data import Dataset,DataLoader
 import matplotlib.pyplot as plt
 import argparse
 sys.path.append("./..")
@@ -162,8 +160,8 @@ for epoch in range(n_epoch):
     plt.plot(noisy_loss, color = 'b', label = 'noisy validation loss')
     plt.legend(loc='upper right')
     plt.title('Loss vs Epochs')
-    plt.xlabel('loss')
-    plt.ylabel('epoch')
+    plt.xlabel('epoch')
+    plt.ylabel('loss')
     plt.savefig("fig/WUN.png", dpi=300, format = 'png')
 
     
@@ -174,8 +172,8 @@ for epoch in range(n_epoch):
     plt.plot(epoch_loss_2048,color = 'y',label = 'training loss_2048')
     plt.legend(loc='upper right')
     plt.title('Loss vs Epochs')
-    plt.xlabel('loss')
-    plt.ylabel('epoch')
+    plt.xlabel('epoch')
+    plt.ylabel('loss')
     plt.savefig("fig/WUN_MSTFT.png", dpi=300, format = 'png')
 
 

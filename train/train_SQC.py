@@ -3,7 +3,6 @@ import os
 import torch
 import torch.nn as nn
 import torch.optim as optim
-from torch.utils.data import Dataset,DataLoader
 import matplotlib.pyplot as plt
 import numpy as np
 import argparse
@@ -17,7 +16,7 @@ parser.add_argument('--env', type=str, default='0', help='GPU number')
 parser.add_argument('--epoch', type=int, default=200, help='epoch number')
 parser.add_argument('--batch', type=int, default=128, help='batch size')
 parser.add_argument('--lr', type=float, default=0.0002, help='learning rate')
-parser.add_argument('--encoder_path', type=str, default='trained_model/BWE_only/WUN_Encoder.pt', help='model save path')
+parser.add_argument('--encoder_path', type=str, default='trained_model/BWE_only/WUN_Encoder.pt', help='encoder path')
 parser.add_argument('--model_path', type=str, default='trained_model/EP_WUN/SQC', help='model save path')
 args = parser.parse_args()
 
@@ -167,8 +166,8 @@ for epoch in range(n_epoch):
     plt.plot(average_loss, color = 'y', label = 'average loss')
     plt.legend(loc='upper right')
     plt.title('Loss vs Epochs')
-    plt.xlabel('loss')
-    plt.ylabel('epoch')
+    plt.xlabel('epoch')
+    plt.ylabel('loss')
     plt.savefig("fig/SQC.png", dpi=300, format = 'png')
         
     plt.figure()
@@ -177,6 +176,6 @@ for epoch in range(n_epoch):
     plt.plot(average_acc, color = 'y', label = 'average accuracy')
     plt.legend(loc='upper right')
     plt.title('Accuracy vs Epochs')
-    plt.xlabel('accuracy')
-    plt.ylabel('epoch')
+    plt.xlabel('epoch')
+    plt.ylabel('accuracy')
     plt.savefig("fig/SQC_acc.png", dpi=300, format = 'png')
