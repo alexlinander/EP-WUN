@@ -2,14 +2,9 @@ import torch
 import torch.nn as nn
 import torch.nn.functional as F
 import torchaudio
-from transformers import Wav2Vec2Model, Wav2Vec2Processor
-import cdpam
 
-# processor = Wav2Vec2Processor.from_pretrained("facebook/wav2vec2-large-960h-lv60")
-# model = Wav2Vec2Model.from_pretrained("facebook/wav2vec2-large-960h-lv60")
 
 class DownSamplingLayer(nn.Module):
-    'ds'
     def __init__(self, channel_in, channel_out, dilation=1, kernel_size=15, stride=1, padding=7):
         super(DownSamplingLayer, self).__init__()
         self.main = nn.Sequential(
@@ -54,8 +49,6 @@ class SQC(nn.Module):
             nn.PReLU()
         )
         self.linear = nn.Sequential(
-
-            # nn.Linear(512,256),
             
             nn.Linear(256,64),
             nn.Linear(64,2)
@@ -73,8 +66,6 @@ class SQC(nn.Module):
         return lstm, output
 
 class BidirectionalLSTM(nn.Module):
-    'fd'
-
     def __init__(self, nIn, nHidden, nOut):
         super(BidirectionalLSTM, self).__init__()
 
@@ -122,9 +113,7 @@ class DownsamplingBlock(nn.Module):
         # Up Sampling
         for i in range(self.n_layers):
             o = self.encoder[i](o)
-            # print('Encoder Layer {} size : {}'.format(i+1, o.size()))
             tmp.append(o)
-            # [batch_size, T // 2, channels]
             o = o[:, :, ::2]
 
         o = self.middle(o)
@@ -164,12 +153,9 @@ class UpsamplingBlock(nn.Module):
         o = input1
         # Down Sampling
         for i in range(self.n_layers):
-            # [batch_size, T * 2, channels]
             o = F.interpolate(o, scale_factor=2, mode="linear", align_corners=True)
-            # Skip Connection
             o = torch.cat([o, tmp[self.n_layers - i - 1]], dim=1)
             o = self.decoder[i](o)
-            # print('Decoder Layer {} size : {}'.format(i+1, o.size()))
 
         o = torch.cat([o, input2], dim=1)
         o = self.out(o)
@@ -185,7 +171,6 @@ class MSTFTLoss(nn.Module):
         self.transform_2048 = torchaudio.transforms.Spectrogram(n_fft=2048, hop_length=240, win_length=1200)
 
     def forward(self, y_pred, y, Lambda):
-        #loss_fn = cdpam.CDPAM()
         loss = nn.L1Loss()
 
 
@@ -225,20 +210,3 @@ class MSTFTLoss(nn.Module):
         l = l_wav+l_512+l_1024+l_2048
 
         return l, l_wav, l_512, l_1024, l_2048
-
-class negative_set_define(nn.Module):
-
-    def __init__(self, ):
-        super(negative_set_define, self).__init__()
-        self.loss = nn.MSELoss()
-
-    def forward(self, anchor, negative):
-        negative_refine = torch.zeros(negative.size())
-        for i,a in enumerate(anchor):
-            loss = torch.zeros(len(anchor))
-            for j,n in enumerate(negative):
-                loss[j] = self.loss(a,n)
-            index = torch.argmax(loss)
-            negative_refine[i] = negative[index]
-
-        return negative_refine

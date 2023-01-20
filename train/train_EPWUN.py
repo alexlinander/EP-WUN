@@ -6,7 +6,7 @@ import torch.optim as optim
 import matplotlib.pyplot as plt
 import argparse
 sys.path.append("./..")
-from model.waveunet_v2 import DownsamplingBlock, UpsamplingBlock, SQC, MSTFTLoss
+from model.waveunet import DownsamplingBlock, UpsamplingBlock, SQC, MSTFTLoss
 from dataset import BWENoiseDataset
 
 #======Configureation filte setting======#

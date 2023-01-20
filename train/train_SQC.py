@@ -7,7 +7,7 @@ import matplotlib.pyplot as plt
 import numpy as np
 import argparse
 sys.path.append("./..")
-from model.waveunet_v2 import DownsamplingBlock, SQC
+from model.waveunet import DownsamplingBlock, SQC
 from dataset import SQCDataset
 
 #======Configureation filte setting======#
