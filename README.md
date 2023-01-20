@@ -6,7 +6,7 @@ It should be noted that each audio file in the dataset should be segmented into 
 
 
 ### Training
-To train EP-WUN, first navigate to the `train` folder and the training process consists of 3 steps, which are:
+To train EP-WUN, first navigate to the `./train` folder and the training process consists of 3 steps, which are:
 1. Train the Wave-U-Net
 ```
 python train_waveunet.py
